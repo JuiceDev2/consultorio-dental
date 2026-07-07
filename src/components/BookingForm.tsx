@@ -1,10 +1,10 @@
 "use client";
-
+ 
 import { useEffect, useMemo, useState } from "react";
 import type { Service } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { COMMENT_MAX_LENGTH, NAME_MAX_LENGTH, formatCurrency, formatTime, isValidPhone } from "@/lib/utils";
-
+ 
 export default function BookingForm({ services }: { services: Service[] }) {
   const supabase = useMemo(() => createClient(), []);
   const [name, setName] = useState("");
@@ -16,12 +16,12 @@ export default function BookingForm({ services }: { services: Service[] }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-
+ 
   const [fullTimes, setFullTimes] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-
+ 
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
-
+ 
   // Cada vez que cambia la fecha, trae los horarios ya llenos para ese día
   // (solo hora + bandera de lleno, sin datos de clientes) para mostrar
   // disponibilidad antes de que el cliente intente agendar.
@@ -31,45 +31,48 @@ export default function BookingForm({ services }: { services: Service[] }) {
       setFullTimes([]);
       return;
     }
-    setLoadingSlots(true);
-    supabase
-      .rpc("get_booked_times", { p_date: date })
-      .then(({ data }) => {
+ 
+    async function loadBookedTimes() {
+      setLoadingSlots(true);
+      try {
+        const { data } = await supabase.rpc("get_booked_times", { p_date: date });
         if (!active) return;
         const full = (data ?? [])
           .filter((row: { appointment_time: string; is_full: boolean }) => row.is_full)
           .map((row: { appointment_time: string }) => row.appointment_time.slice(0, 5));
         setFullTimes(full);
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoadingSlots(false);
-      });
+      }
+    }
+ 
+    loadBookedTimes();
     return () => {
       active = false;
     };
   }, [date, supabase]);
-
+ 
   const isChosenTimeFull = time.length > 0 && fullTimes.includes(time);
-
+ 
   const total = useMemo(
     () => services.filter((s) => selected.includes(s.id)).reduce((sum, s) => sum + Number(s.price), 0),
     [selected, services]
   );
-
+ 
   function toggleService(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
-
+ 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
+ 
     if (name.trim().length < 2) return setError("Escribe tu nombre completo.");
     if (!isValidPhone(phone)) return setError("Escribe un número telefónico válido.");
     if (selected.length === 0) return setError("Elige al menos un servicio.");
     if (!date || !time) return setError("Elige fecha y hora.");
     if (isChosenTimeFull) return setError("Ese horario ya está lleno. Elige otra hora disponible.");
-
+ 
     setLoading(true);
     try {
       const res = await fetch("/api/appointments", {
@@ -93,7 +96,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
       setLoading(false);
     }
   }
-
+ 
   if (success) {
     return (
       <div className="card text-center">
@@ -108,7 +111,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
       </div>
     );
   }
-
+ 
   return (
     <form onSubmit={handleSubmit} className="card space-y-5">
       <div>
@@ -122,7 +125,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
           required
         />
       </div>
-
+ 
       <div>
         <label className="label" htmlFor="phone">Número telefónico</label>
         <input
@@ -135,7 +138,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
           required
         />
       </div>
-
+ 
       <div>
         <span className="label">Servicios</span>
         <div className="space-y-2">
@@ -171,7 +174,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
           </p>
         )}
       </div>
-
+ 
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="label" htmlFor="date">Fecha</label>
@@ -197,7 +200,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
           />
         </div>
       </div>
-
+ 
       {date && (
         <div className="text-xs text-ink/50">
           {loadingSlots ? (
@@ -211,11 +214,11 @@ export default function BookingForm({ services }: { services: Service[] }) {
           )}
         </div>
       )}
-
+ 
       {isChosenTimeFull && (
         <p className="text-sm text-red-600">Ese horario ya está lleno. Elige otra hora.</p>
       )}
-
+ 
       <div>
         <div className="flex items-center justify-between">
           <label className="label" htmlFor="comment">Comentario (opcional)</label>
@@ -232,9 +235,9 @@ export default function BookingForm({ services }: { services: Service[] }) {
           placeholder="Ej. Me duele la muela superior derecha desde hace 3 días."
         />
       </div>
-
+ 
       {error && <p className="text-sm text-red-600">{error}</p>}
-
+ 
       <button type="submit" disabled={loading || isChosenTimeFull} className="btn-primary w-full">
         {loading ? "Agendando..." : "Agendar cita"}
       </button>
