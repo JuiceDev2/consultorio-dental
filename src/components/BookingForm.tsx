@@ -1,10 +1,20 @@
 "use client";
- 
+
 import { useEffect, useMemo, useState } from "react";
 import type { Service } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
-import { COMMENT_MAX_LENGTH, NAME_MAX_LENGTH, formatCurrency, formatTime, isValidPhone } from "@/lib/utils";
- 
+import {
+  COMMENT_MAX_LENGTH,
+  NAME_MAX_LENGTH,
+  formatCurrency,
+  formatTime,
+  getBusinessSlots,
+  isClosedDay,
+  isValidPhone,
+} from "@/lib/utils";
+
+const SLOTS = getBusinessSlots();
+
 export default function BookingForm({ services }: { services: Service[] }) {
   const supabase = useMemo(() => createClient(), []);
   const [name, setName] = useState("");
@@ -16,22 +26,24 @@ export default function BookingForm({ services }: { services: Service[] }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
- 
+
   const [fullTimes, setFullTimes] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
- 
+
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
- 
+  const closedDay = date.length > 0 && isClosedDay(date);
+
   // Cada vez que cambia la fecha, trae los horarios ya llenos para ese día
   // (solo hora + bandera de lleno, sin datos de clientes) para mostrar
   // disponibilidad antes de que el cliente intente agendar.
   useEffect(() => {
     let active = true;
-    if (!date) {
+    setTime(""); // al cambiar de fecha, que el cliente vuelva a elegir hora
+    if (!date || isClosedDay(date)) {
       setFullTimes([]);
       return;
     }
- 
+
     async function loadBookedTimes() {
       setLoadingSlots(true);
       try {
@@ -45,34 +57,35 @@ export default function BookingForm({ services }: { services: Service[] }) {
         if (active) setLoadingSlots(false);
       }
     }
- 
+
     loadBookedTimes();
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, supabase]);
- 
-  const isChosenTimeFull = time.length > 0 && fullTimes.includes(time);
- 
+
   const total = useMemo(
     () => services.filter((s) => selected.includes(s.id)).reduce((sum, s) => sum + Number(s.price), 0),
     [selected, services]
   );
- 
+
   function toggleService(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
- 
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
- 
+
     if (name.trim().length < 2) return setError("Escribe tu nombre completo.");
     if (!isValidPhone(phone)) return setError("Escribe un número telefónico válido.");
     if (selected.length === 0) return setError("Elige al menos un servicio.");
-    if (!date || !time) return setError("Elige fecha y hora.");
-    if (isChosenTimeFull) return setError("Ese horario ya está lleno. Elige otra hora disponible.");
- 
+    if (!date) return setError("Elige una fecha.");
+    if (closedDay) return setError("Ese día el consultorio está cerrado. Elige otro día.");
+    if (!time) return setError("Elige un horario disponible.");
+    if (fullTimes.includes(time)) return setError("Ese horario ya está lleno. Elige otro.");
+
     setLoading(true);
     try {
       const res = await fetch("/api/appointments", {
@@ -96,7 +109,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
       setLoading(false);
     }
   }
- 
+
   if (success) {
     return (
       <div className="card text-center">
@@ -105,13 +118,13 @@ export default function BookingForm({ services }: { services: Service[] }) {
         </div>
         <h2 className="font-display text-2xl italic text-teal-700">¡Tu cita está confirmada!</h2>
         <p className="mt-2 text-ink/60">
-          Te esperamos el <strong>{date}</strong> a las <strong>{time}</strong> hrs. Si necesitas cambiar algo,
-          llámanos con tu nombre y teléfono a la mano.
+          Te esperamos el <strong>{date}</strong> a las <strong>{formatTime(time)}</strong>. Si necesitas cambiar
+          algo, llámanos con tu nombre y teléfono a la mano.
         </p>
       </div>
     );
   }
- 
+
   return (
     <form onSubmit={handleSubmit} className="card space-y-5">
       <div>
@@ -125,7 +138,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
           required
         />
       </div>
- 
+
       <div>
         <label className="label" htmlFor="phone">Número telefónico</label>
         <input
@@ -138,7 +151,7 @@ export default function BookingForm({ services }: { services: Service[] }) {
           required
         />
       </div>
- 
+
       <div>
         <span className="label">Servicios</span>
         <div className="space-y-2">
@@ -174,51 +187,64 @@ export default function BookingForm({ services }: { services: Service[] }) {
           </p>
         )}
       </div>
- 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="label" htmlFor="date">Fecha</label>
-          <input
-            id="date"
-            type="date"
-            className="input"
-            min={todayStr}
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="time">Hora</label>
-          <input
-            id="time"
-            type="time"
-            className={`input ${isChosenTimeFull ? "border-red-400" : ""}`}
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            required
-          />
-        </div>
+
+      <div>
+        <label className="label" htmlFor="date">Fecha</label>
+        <input
+          id="date"
+          type="date"
+          className="input"
+          min={todayStr}
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          required
+        />
+        <p className="mt-1 text-xs text-ink/40">Atendemos de lunes a sábado, 9:00 a.m. a 6:00 p.m.</p>
       </div>
- 
+
       {date && (
-        <div className="text-xs text-ink/50">
-          {loadingSlots ? (
-            "Consultando disponibilidad..."
-          ) : fullTimes.length > 0 ? (
-            <>
-              Horarios ya llenos ese día: {fullTimes.map((t) => formatTime(t)).join(", ")}
-            </>
+        <div>
+          <span className="label">Horario</span>
+
+          {closedDay ? (
+            <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
+              Ese día el consultorio está cerrado (domingo). Elige otra fecha.
+            </p>
+          ) : loadingSlots ? (
+            <p className="text-sm text-ink/50">Consultando disponibilidad...</p>
           ) : (
-            "Todos los horarios están disponibles ese día."
+            <>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {SLOTS.map((slot) => {
+                  const isFull = fullTimes.includes(slot);
+                  const isSelected = time === slot;
+                  return (
+                    <button
+                      key={slot}
+                      type="button"
+                      disabled={isFull}
+                      onClick={() => setTime(slot)}
+                      className={`rounded-lg border px-2 py-2 text-sm font-medium transition-colors ${
+                        isFull
+                          ? "cursor-not-allowed border-line bg-ink/5 text-ink/30 line-through"
+                          : isSelected
+                          ? "border-teal-600 bg-teal-600 text-white"
+                          : "border-line bg-white text-ink hover:border-teal-400"
+                      }`}
+                    >
+                      {formatTime(slot)}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xs text-ink/40">
+                Los horarios tachados ya están llenos ese día. Toca un horario disponible para elegirlo.
+              </p>
+            </>
           )}
         </div>
       )}
- 
-      {isChosenTimeFull && (
-        <p className="text-sm text-red-600">Ese horario ya está lleno. Elige otra hora.</p>
-      )}
- 
+
       <div>
         <div className="flex items-center justify-between">
           <label className="label" htmlFor="comment">Comentario (opcional)</label>
@@ -235,10 +261,10 @@ export default function BookingForm({ services }: { services: Service[] }) {
           placeholder="Ej. Me duele la muela superior derecha desde hace 3 días."
         />
       </div>
- 
+
       {error && <p className="text-sm text-red-600">{error}</p>}
- 
-      <button type="submit" disabled={loading || isChosenTimeFull} className="btn-primary w-full">
+
+      <button type="submit" disabled={loading || closedDay || !time} className="btn-primary w-full">
         {loading ? "Agendando..." : "Agendar cita"}
       </button>
     </form>

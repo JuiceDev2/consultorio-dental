@@ -19,6 +19,27 @@ export function formatTime(timeStr: string): string {
 export const COMMENT_MAX_LENGTH = 300;
 export const NAME_MAX_LENGTH = 120;
 
+// ---------- Horario de atención del consultorio ----------
+// Lunes a sábado, 9:00 a.m. a 6:00 p.m., citas cada hora en punto. Cerrado domingo.
+export const BUSINESS_OPEN_HOUR = 9;
+export const BUSINESS_CLOSE_HOUR = 18;
+export const CLOSED_WEEKDAYS = [0]; // 0 = domingo (Date.getDay())
+
+export function isClosedDay(dateStr: string): boolean {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return false;
+  const day = new Date(y, m - 1, d).getDay();
+  return CLOSED_WEEKDAYS.includes(day);
+}
+
+export function getBusinessSlots(): string[] {
+  const slots: string[] = [];
+  for (let h = BUSINESS_OPEN_HOUR; h < BUSINESS_CLOSE_HOUR; h++) {
+    slots.push(`${String(h).padStart(2, "0")}:00`);
+  }
+  return slots;
+}
+
 export function sanitizePlainText(input: string, maxLength: number): string {
   // Elimina caracteres de control y recorta longitud. La validación "real"
   // contra inyección ocurre porque siempre usamos consultas parametrizadas
